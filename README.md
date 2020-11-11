@@ -2,7 +2,7 @@
 
 A simple wrapper to work easily with Electron App using React
 
-##  How react-jsx works
+##  How electron-jsx works
 
   - Watch all files in specified directory (react app sources)
   - Detect changes in files and automatic re-compile and transpile with Babel
