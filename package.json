@@ -1,6 +1,6 @@
 {
   "name": "electron-jsx",
-  "version": "0.0.13",
+  "version": "0.0.15",
   "description": "Real Time compiler for Electron apps with React and node Integration",
   "main": "index.js",
   
@@ -14,7 +14,10 @@
   "keywords": [
     "electron",
     "jsx",
-    "babel"
+    "babel",
+    "react",
+    "reload",
+    "nodeIntegration"
   ],
   "author": "Marcos Fuenmayor",
   "license": "ISC",

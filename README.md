@@ -1,4 +1,4 @@
-# React-jsx
+# Electron-jsx
 
 A simple wrapper to work easily with Electron App using React
 
