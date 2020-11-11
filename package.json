@@ -3,6 +3,11 @@
   "version": "0.0.12",
   "description": "Real Time compiler for Electron apps with React and node Integration",
   "main": "index.js",
+  
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mdjfs/electron-jsx.git"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
