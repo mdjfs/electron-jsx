@@ -1,0 +1,23 @@
+{
+  "name": "electron-jsx",
+  "version": "0.0.12",
+  "description": "Real Time compiler for Electron apps with React and node Integration",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "electron",
+    "jsx",
+    "babel"
+  ],
+  "author": "Marcos Fuenmayor",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/core": "^7.12.3",
+    "@babel/plugin-transform-modules-commonjs": "^7.12.1",
+    "@babel/preset-react": "^7.12.5",
+    "fs": "0.0.1-security",
+    "path": "^0.12.7"
+  }
+}
