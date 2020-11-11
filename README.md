@@ -2,6 +2,8 @@
 
 A simple wrapper to work easily with Electron App using React
 
+![Quick Test with electron-reload](https://imgur.com/75YZ2xk.gif)
+
 ##  How electron-jsx works
 
   - Watch all files in specified directory (react app sources)
@@ -11,13 +13,14 @@ Is a simple way to implement a SPA in react app :D
 
 # Then, how can I use it? (Quick Start)
 
-In your index.html file, you need require the package and set "reactDir" parameter with all of your application sources (I recommend that it be apart from the "src" folder or similar) and "main" ("index.jsx" by default)
+In your index.html file, you need require the package and set "reactDir" parameter with all of your application sources (I recommend that it be apart from the "src" folder or similar), "distDir" for the main dir of static compiled files, usually __dirname bc you call the function in your index.html file, and "main" (optional) ("index.jsx" by default)
 
 ```javascript
 <script>
 const fs = require("fs");
 require("electron-jsx")({
-    reactDir: path.join(__dirname,"../anywhere/else/etc/my-react-app")
+    reactDir: path.join(__dirname,"../anywhere/else/etc/my-react-app"),
+    distDir: __dirname
 })
 // in your folder "my-react-app" you need the index.jsx, and maybe components, pages, other jsx, css, etc
 </script>
@@ -55,7 +58,8 @@ Quick start in index.html:
     <script>
         const fs = require("fs");
         require("electron-jsx")({
-            reactDir: path.join(__dirname,"../src/react-app")
+            reactDir: path.join(__dirname,"../src/react-app"),
+            distDir: __dirname
         })
     </script>
 </head>
