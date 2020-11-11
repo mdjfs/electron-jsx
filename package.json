@@ -1,6 +1,6 @@
 {
   "name": "electron-jsx",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Real Time compiler for Electron apps with React and node Integration",
   "main": "index.js",
   

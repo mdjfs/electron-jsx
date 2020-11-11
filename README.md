@@ -28,11 +28,12 @@ You can also change name of entry point like "main.jsx" or anything
 
 Maybe you should use the package "electron-reload" to detect changes in your project, then, you can also have a directory structure like this:
 
-- dist
--- index.html
-- src
--- react-app / index.jsx
--- electron.js
+/dist
+    index.html
+/src
+    /react-app
+        index.jsx
+    electron.js
 
 Quick start in electron.js:
 
