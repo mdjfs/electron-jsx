@@ -1,4 +1,4 @@
-const { stat, writeFile, watchFile, readdir, mkdir, existsSync, copyFile, unwatchFile, mkdirSync, readFile } = require("fs");
+const { stat, writeFile, watchFile, readdir, mkdir, existsSync, copyFile, unwatchFile, mkdirSync, readFile, exists } = require("fs");
 const path = require("path");
 const babel = require("@babel/core")
 const { COPYFILE_EXCL } = require("fs").constants;
@@ -58,8 +58,10 @@ function renderDev(distDir, reactDir) {
                 for (var searchFolder of folders) renderFolder(searchFolder);
                 var files = data.filter((value) => value.isFile()).map((value) => path.join(folder, value.name));
                 for (var file of files) {
-                    if (path.basename(file).includes(".jsx")) transformJSX(file, file.replace(reactDir, distDir).replace(".jsx", ".js"), { flag: 'w' });
-                    else streamFile(file, file.replace(reactDir, distDir), true);
+                    const outputDir = (path.basename(file).includes(".jsx")) ? file.replace(reactDir, distDir).replace(".jsx", ".js") : file.replace(reactDir, distDir) ;
+                    const inputDir = file;
+                    if (path.basename(inputDir).includes(".jsx")) transformJSX(inputDir, outputDir, { flag: 'w' });
+                    else streamFile(inputDir, outputDir, true);
                 }
             }
         })
@@ -81,7 +83,7 @@ function streamFile(inputPath, outputPath, replace = true, listen = true) {
             if(err) write(err, true);
             else{
                 readFile(outputPath, (err, outputData) => {
-                    if(err) write(err, true);
+                    if(err) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true); else reload(); });
                     else if ( ! (inputData.toString() == outputData.toString())) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true); else reload(); });
                 });
             }
@@ -132,7 +134,7 @@ function transformJSX(inputPath, outputPath, writeOptions = { flag: 'wx' }, list
                 }
             }
             readFile(outputPath, (err, fileData) => {
-                if(err) write(err, true);
+                if(err) writeFile(outputPath, data.code, writeOptions, (err) => { if(!err) reload(); });
                 else if( ! (fileData == data.code) ) writeFile(outputPath, data.code, writeOptions, (err) => { if(!err) reload(); });
             });
         }
