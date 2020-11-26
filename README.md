@@ -2,83 +2,98 @@
 
 A simple wrapper to work easily with Electron App using React
 
-![Quick Test with electron-reload](https://imgur.com/75YZ2xk.gif)
+![Quick Test](https://imgur.com/gghhTif.gif)
 
 ##  How electron-jsx works
 
-  - Watch all files in specified directory (react app sources)
-  - Detect changes in files and automatic re-compile and transpile with Babel
+  - Watch all files in specified directory (react sources)
+  - Detect changes in files for automatic transpile with Babel and reload Window
 
-Is a simple way to implement a SPA in react app :D
+Is a simple way to implement a SPA in electron app :D
 
 # Then, how can I use it? (Quick Start)
 
-In your index.html file, you need require the package and set "reactDir" parameter with all of your application sources (I recommend that it be apart from the "src" folder or similar), "distDir" for the main dir of static compiled files, usually __dirname bc you call the function in your index.html file, and "main" (optional) ("index.jsx" by default)
+In your index.html file, only you need call the package and tell about your react sources, after that you can call a JSX script in that html file...
 
 ```javascript
 <script>
-const fs = require("fs");
-require("electron-jsx")({
-    reactDir: path.join(__dirname,"../anywhere/else/etc/my-react-app"),
-    distDir: __dirname
+require("electron-jsx")(__dirname, {
+    reactDir: "./react-sources",
 })
-// in your folder "my-react-app" you need the index.jsx, and maybe components, pages, other jsx, css, etc
 </script>
+<script react-src="./react-sources/index.jsx">
 ```
-You can also change name of entry point like "main.jsx" or anything
 
-# Setting up for Development Enviroment !
+Quick start example:
 
-Maybe you should use the package "electron-reload" to detect changes in your project, then, you can also have a directory structure like this:
+```
+npm init
+npm install electron path electron-jsx
+```
 
-/dist<br/>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;index.html<br/>
-/src<br/>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/react-app<br/>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;index.jsx<br/>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;electron.js<br/>
-
-Quick start in electron.js:
-
+./src/electron.js :
 ```javascript
+const { app, BrowserWindow } = require("electron");
+const path = require("path");
+let win;
 
-require("electron-reload")(path.join(__dirname, "../dist"))
-
-win = new BrowserWindow({
+function createWindow () {
+    win = new BrowserWindow({
+      width: 800,
+      height: 600,
       webPreferences: {
-        nodeIntegration: true // very important !
+        nodeIntegration: true
       }
     });
-win.load(path.join(__dirname, "../dist/index.html")
+    win.loadFile(path.join(__dirname, "./index.html"))
+    win.on("close", _ => win=null);
+}
+
+app.on("ready", createWindow);
+app.on("activate", (!win) ? createWindow : undefined);
+app.on("window-all-closed", app.quit);
 ```
 
-Quick start in index.html:
-```javascript
+./src/index.html :
+```html
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>React Tests</title>
     <script>
-        const fs = require("fs");
-        require("electron-jsx")({
-            reactDir: path.join(__dirname,"../src/react-app"),
-            distDir: __dirname
+        require("electron-jsx")(__dirname, {
+            reactDir: "./react-app"
         })
     </script>
+    <script react-src="./react-app/index.jsx"></script>
 </head>
+
 <body>
     <div id="root"></div>
 </body>
+
+</html>
 ```
 
-Quick start in index.jsx:
+./src/react-app/index.jsx :
 ```javascript
-
 import React from "react";
 import ReactDOM from "react-dom";
 
 function Component(){
-    return <div>Hello !!!!!</div>
+    return <div>Hello World</div>
 }
 
 ReactDOM.render(<Component/>,document.getElementById("root"));
+```
+
+now, you can:
+
+```
+electron ./src/electron.js
 ```
 
 ### *And ready!* that should work
