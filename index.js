@@ -1,4 +1,4 @@
-const { stat, writeFile, watchFile, readdir, mkdir, existsSync, copyFile, unwatchFile } = require("fs");
+const { stat, writeFile, watchFile, readdir, mkdir, existsSync, copyFile, unwatchFile, mkdirSync, readFile } = require("fs");
 const path = require("path");
 const babel = require("@babel/core")
 const { COPYFILE_EXCL } = require("fs").constants;
@@ -29,24 +29,25 @@ function check({ dirs, files }, callback) {
     }
 }
 
-function mainCheckProcess({ reactDir, distDir, main = "index.jsx" }) {
-    if (reactDir && distDir) {
-        check({ dirs: [reactDir, distDir] }, err => {
-            const mainPath = path.join(reactDir, main);
-            if (!err) check({ files: [mainPath] }, err => {
+function mainCheckProcess(dirname, { reactDir }) {
+    if (reactDir) {
+        check({ dirs: [dirname] }, err => {
+            const mainPath = path.join(dirname, reactDir);
+            if (!err) check({ dirs: [mainPath] }, err => {
                 if (!err) {
-                    renderDev(distDir, reactDir, mainPath);
+                    var buildDir = path.join(dirname, "./react-builds");
+                    if(!existsSync(buildDir)) mkdirSync(buildDir);
+                    renderDev(buildDir, mainPath);
                 }
             })
         });
     }
     else {
-        write("Please set 'reactDir' and 'distDir' attributes when you call the function :P", true);
+        write("Please set 'reactDir' when you call the function :P", true);
     }
 }
 
-function renderDev(distDir, reactDir, mainPath) {
-    write("Rendering in Dev Mode... ^.^");
+function renderDev(distDir, reactDir) {
     function renderFolder(folder) {
         var distEq = folder.replace(reactDir, distDir);
         if (!existsSync(distEq)) mkdir(distEq, undefined, (err) => { if (err) write(err, true) });
@@ -57,46 +58,105 @@ function renderDev(distDir, reactDir, mainPath) {
                 for (var searchFolder of folders) renderFolder(searchFolder);
                 var files = data.filter((value) => value.isFile()).map((value) => path.join(folder, value.name));
                 for (var file of files) {
-                    if (path.basename(file).includes(".jsx")) transformJSX(file, file.replace(reactDir, distDir).replace(".jsx", ".js"));
-                    else streamFile(file, file.replace(reactDir, distDir), false);
+                    if (path.basename(file).includes(".jsx")) transformJSX(file, file.replace(reactDir, distDir).replace(".jsx", ".js"), { flag: 'w' });
+                    else streamFile(file, file.replace(reactDir, distDir), true);
                 }
             }
         })
     }
     renderFolder(reactDir);
-    var baseScript = document.createElement('script');
-    baseScript.src = path.basename(mainPath).replace(".jsx", ".js");
-    baseScript.type = "module";
-    document.head.append(baseScript);
-}
-
-function streamFile(inputPath, outputPath, replace = true) {
-    if (replace) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true) });
-    else copyFile(inputPath, outputPath, COPYFILE_EXCL, (_) => { });
-    function listen() {
-        write(`Copying ${path.basename(inputPath)} ... :P`); streamFile(inputPath, outputPath);
+    var scripts = document.getElementsByTagName("script");
+    for(var script of scripts){
+        if(script.getAttribute("react-src")){
+            var reactSrc = script.getAttribute("react-src");
+            script.type = "module";
+            script.src = reactSrc.replace(path.basename(path.join(reactSrc,"..")),path.basename(distDir)).replace(".jsx",".js");
+        }
     }
-    watchFile(inputPath, { interval: 1000 }, _ => { listen(); unwatchFile(inputPath) });
 }
 
-function transformJSX(inputPath, outputPath, writeOptions = { flag: 'wx' }) {
+function streamFile(inputPath, outputPath, replace = true, listen = true) {
+    if (replace){
+        readFile(inputPath, (err, inputData) => {
+            if(err) write(err, true);
+            else{
+                readFile(outputPath, (err, outputData) => {
+                    if(err) write(err, true);
+                    else if ( ! (inputData.toString() == outputData.toString())) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true); else reload(); });
+                });
+            }
+        });
+    }    
+    else copyFile(inputPath, outputPath, COPYFILE_EXCL, (err) => { if(!err) reload(); });
+    if(listen) watchFile(inputPath, { interval: 1000 }, _ => { write(`Copying ${path.basename(inputPath)} ... :P`); streamFile(inputPath, outputPath, true, false); });
+}
+
+function transformJSX(inputPath, outputPath, writeOptions = { flag: 'wx' }, listen=true) {
     babel.transformFile(inputPath, options, (err, data) => {
         if (err) write(err, true);
         else {
+            var cssDir = null;
             data.code = data.code.replace(/require\(("|').[\w,\s-,/]+\.css("|')\)(?:\;?)/g, (value) => {
-                var dir = value.match(/.[\w,\s-,/]+\.css/)[0];
-                dir = dir.replace("./", outputPath.replace(path.basename(outputPath), ""));
-                dir = dir.replace(/\\/g, "\\\\");
-                return `document.head.append(Object.assign(document.createElement('link'),{rel:'stylesheet',type:'text/css',href:'${dir}'}))`
+                cssDir = value.match(/.[\w,\s-,/]+\.css/)[0];
+                cssDir = cssDir.replace("./", outputPath.replace(path.basename(outputPath), ""));
+                cssDir = cssDir.replace(/\\/g, "\\\\");
+                return "";
             });
-            writeFile(outputPath, data.code, writeOptions, (_) => { });
+            data.code = data.code.replace(/require\(("|')[.][/][\w,\s-,/]+("|')\)(?:\;?)/g, (value) => {
+                return value.replace(/("|')[.][/][\w,\s-,/]+("|')/, (value) => {
+                    return `"${path.join(outputPath, "..", value.replace(/'/g,"").replace(/"/g,"")).replace(/\\/g, "\\\\")}"`
+                })
+            });
+            if(cssDir){
+                var filename = path.basename(inputPath).split(".")[0];
+                var reactVar = getReactVar(data.code);
+                var reactDOMVar = getReactDOMVar(data.code);
+                if(reactVar){  
+                    data.code = data.code.replace(/exports.default.+=.+_default.+;?/g, (value) => {
+                        var varName = value.replace(/exports.default.+=/g,"").replace(/ /g,"").replace(/;/g,"");
+                        return `exports.default = () => { return ${reactVar}.default.createElement("div", null, [
+                            ${reactVar}.default.createElement("link", {key:"${filename}-css", rel:"stylesheet", type: "text/css", href: "${cssDir}"}),
+                            ${reactVar}.default.createElement(${varName}, {key:"${filename}-child"})
+                        ]); }`
+                    });
+                }
+                if(reactVar && reactDOMVar){          
+                    data.code = data.code.replace(new RegExp(`${reactDOMVar}.default.render[(].+,`, "g"), (value) => {
+                        return value.replace(new RegExp(`${reactVar}.default.createElement(.+)`,"g"), (value) => {
+                            return `${reactVar}.default.createElement("div", null, [
+                                ${reactVar}.default.createElement("link", {key:"${filename}-css", rel:"stylesheet", type: "text/css", href: "${cssDir}"}),
+                                ${value.substring(0, value.length-1).replace("null",`{key:"${filename}-child"}`)}
+                            ]),`;
+                        })
+                    })
+                }
+            }
+            readFile(outputPath, (err, fileData) => {
+                if(err) write(err, true);
+                else if( ! (fileData == data.code) ) writeFile(outputPath, data.code, writeOptions, (err) => { if(!err) reload(); });
+            });
         }
     });
-    function listen() {
-        write(`Compiling ${path.basename(inputPath)} ... :D`); transformJSX(inputPath, outputPath, { flag: 'w' });
-    }
-    watchFile(inputPath, { interval: 1000 }, _ => { listen(); unwatchFile(inputPath) });
+    if(listen) watchFile(inputPath, { interval: 1000 }, (_) => { write(`Compiling ${path.basename(inputPath)} ... :D`); transformJSX(inputPath, outputPath, { flag: 'w' }, false);  });
+}
+
+function getVarName(line){
+    return line.match(/(var|const|let).+=/g)[0].replace(/(var|const|let)/g,"").replace(/ /g,"").replace(/=/g,"")
+}
+
+function getReactVar(code){
+    var reactVar = code.match(/(var|const|let).+=.+require.+("|')react("|').+;?/g);
+    return (reactVar) ? getVarName(reactVar[0]) : null;
+}
+
+function getReactDOMVar(code){
+    var domVar = code.match(/(var|const|let).+=.+require.+("|')react-dom("|').+;?/g);
+    return (domVar) ? getVarName(domVar[0]) : null;
 }
 
 
 module.exports = mainCheckProcess;
+
+function reload(){
+    window.location.reload();
+}
