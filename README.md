@@ -28,7 +28,8 @@ Quick start example:
 
 ```
 npm init
-npm install electron path electron-jsx
+npm install --global electron
+npm install react react-dom path electron-jsx
 ```
 
 ./src/electron.js :
