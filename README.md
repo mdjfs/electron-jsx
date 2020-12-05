@@ -95,8 +95,8 @@ And if all its ok, you can see the react app in the electron window... (Be patie
 # Issues Detected
 
 - If you import more than 1 CSS file in your component, it will double the import
-- You can do that: _export default function YourComponent(){}_
-  but not that: _export default class YourComponent extend React ..._
+- You can do that: _export default function YourComponent(){}_ <br/>
+  but not that: _export default class YourComponent extend React ..._ <br/>
   Instead of that, btw the best way is the _export default YourComponent;_ (export the expression)
 
 If you detect more issues, please tell about that in the github repository !
