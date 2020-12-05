@@ -1,164 +1,334 @@
-const { stat, writeFile, watchFile, readdir, mkdir, existsSync, copyFile, unwatchFile, mkdirSync, readFile, exists } = require("fs");
+/**
+ * MIT License
+ *
+ * Creator: Marcos Fuenmayor
+ *
+ * If you want be a collaborator, please contact me ! email: marcos.fuenmayorhtc@gmail.com
+ */
+
+const {
+  stat,
+  writeFile,
+  watchFile,
+  readdir,
+  mkdir,
+  copyFile,
+  unlink,
+  readFile,
+} = require("fs");
 const path = require("path");
-const babel = require("@babel/core")
-const { COPYFILE_EXCL } = require("fs").constants;
+const babel = require("@babel/core");
 
-const options = {
-    presets: ["@babel/preset-react"],
-    plugins: ["@babel/plugin-transform-modules-commonjs"]
-}
+// initial configs for babel:
 
+const config_babelJSXtoJS = {
+  presets: ["@babel/preset-react"],
+  plugins: ["@babel/plugin-transform-modules-commonjs"],
+};
+
+// var for dynamics config of babel custom css plugin:
+
+let componentCssName = "ElectronJSXCSS";
+let componentCssSource;
+let morePlugins = [];
+
+/**
+ *
+ * @param {String} text
+ * @param {Boolean} err
+ */
 function write(text, err = false) {
-    text = (text) ? text.toString() : undefined;
-    (err) ? process.stderr.write(`[ERROR] electron-jsx: ${text}\n`) : process.stdout.write(`electron-jsx:  ${text}\n`);
+  text = text ? text.toString() : undefined;
+  if (text) {
+    err
+      ? process.stderr.write(`[ERROR] electron-jsx: ${text}\n`)
+      : process.stdout.write(`electron-jsx:  ${text}\n`);
+  }
 }
 
-function check({ dirs, files }, callback) {
-    var anyerr = false;
-    var iterable = (dirs) ? dirs : files;
-    var method = (dirs) ? "isDirectory" : "isFile";
-    var processes = 0;
-    for (var path of iterable) {
-        stat(path, (err, stat) => {
-            if (!anyerr) (err) ? anyerr = true : anyerr = !stat[method]();
-            if (err) write(err, true);
-            else if (!stat[method]()) write(`electron-jsx: ${path} needs to be a ${method.replace("is", "")} :'(`, true);
-            processes++;
-            if (processes == iterable.length) callback(anyerr);
-        });
-    }
-}
-
-function mainCheckProcess(dirname, { reactDir }) {
-    if (reactDir) {
-        check({ dirs: [dirname] }, err => {
-            const mainPath = path.join(dirname, reactDir);
-            if (!err) check({ dirs: [mainPath] }, err => {
-                if (!err) {
-                    var buildDir = path.join(dirname, "./react-builds");
-                    if(!existsSync(buildDir)) mkdirSync(buildDir);
-                    renderDev(buildDir, mainPath);
-                }
-            })
-        });
-    }
-    else {
-        write("Please set 'reactDir' when you call the function :P", true);
-    }
-}
-
-function renderDev(distDir, reactDir) {
-    function renderFolder(folder) {
-        var distEq = folder.replace(reactDir, distDir);
-        if (!existsSync(distEq)) mkdir(distEq, undefined, (err) => { if (err) write(err, true) });
-        readdir(folder, { withFileTypes: true }, (err, data) => {
-            if (err) write(err, true)
-            else {
-                var folders = data.filter((value) => !value.isFile()).map((value) => path.join(folder, value.name));
-                for (var searchFolder of folders) renderFolder(searchFolder);
-                var files = data.filter((value) => value.isFile()).map((value) => path.join(folder, value.name));
-                for (var file of files) {
-                    const outputDir = (path.basename(file).includes(".jsx")) ? file.replace(reactDir, distDir).replace(".jsx", ".js") : file.replace(reactDir, distDir) ;
-                    const inputDir = file;
-                    if (path.basename(inputDir).includes(".jsx")) transformJSX(inputDir, outputDir, { flag: 'w' });
-                    else streamFile(inputDir, outputDir, true);
-                }
-            }
-        })
-    }
-    renderFolder(reactDir);
-    var scripts = document.getElementsByTagName("script");
-    for(var script of scripts){
-        if(script.getAttribute("react-src")){
-            var reactSrc = script.getAttribute("react-src");
-            script.type = "module";
-            script.src = reactSrc.replace(path.basename(path.join(reactSrc,"..")),path.basename(distDir)).replace(".jsx",".js");
-        }
-    }
-}
-
-function streamFile(inputPath, outputPath, replace = true, listen = true) {
-    if (replace){
-        readFile(inputPath, (err, inputData) => {
-            if(err) write(err, true);
-            else{
-                readFile(outputPath, (err, outputData) => {
-                    if(err) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true); else reload(); });
-                    else if ( ! (inputData.toString() == outputData.toString())) copyFile(inputPath, outputPath, (err) => { if (err) write(err, true); else reload(); });
-                });
-            }
-        });
-    }    
-    else copyFile(inputPath, outputPath, COPYFILE_EXCL, (err) => { if(!err) reload(); });
-    if(listen) watchFile(inputPath, { interval: 1000 }, _ => { write(`Copying ${path.basename(inputPath)} ... :P`); streamFile(inputPath, outputPath, true, false); });
-}
-
-function transformJSX(inputPath, outputPath, writeOptions = { flag: 'wx' }, listen=true) {
-    babel.transformFile(inputPath, options, (err, data) => {
-        if (err) write(err, true);
-        else {
-            var cssDir = null;
-            data.code = data.code.replace(/require\(("|').[\w,\s-,/]+\.css("|')\)(?:\;?)/g, (value) => {
-                cssDir = value.match(/.[\w,\s-,/]+\.css/)[0];
-                cssDir = cssDir.replace("./", outputPath.replace(path.basename(outputPath), ""));
-                cssDir = cssDir.replace(/\\/g, "\\\\");
-                return "";
-            });
-            data.code = data.code.replace(/require\(("|')[.][/][\w,\s-,/]+("|')\)(?:\;?)/g, (value) => {
-                return value.replace(/("|')[.][/][\w,\s-,/]+("|')/, (value) => {
-                    return `"${path.join(outputPath, "..", value.replace(/'/g,"").replace(/"/g,"")).replace(/\\/g, "\\\\")}"`
-                })
-            });
-            if(cssDir){
-                var filename = path.basename(inputPath).split(".")[0];
-                var reactVar = getReactVar(data.code);
-                var reactDOMVar = getReactDOMVar(data.code);
-                if(reactVar){  
-                    data.code = data.code.replace(/exports.default.+=.+_default.+;?/g, (value) => {
-                        var varName = value.replace(/exports.default.+=/g,"").replace(/ /g,"").replace(/;/g,"");
-                        return `exports.default = () => { return ${reactVar}.default.createElement("div", null, [
-                            ${reactVar}.default.createElement("link", {key:"${filename}-css", rel:"stylesheet", type: "text/css", href: "${cssDir}"}),
-                            ${reactVar}.default.createElement(${varName}, {key:"${filename}-child"})
-                        ]); }`
-                    });
-                }
-                if(reactVar && reactDOMVar){          
-                    data.code = data.code.replace(new RegExp(`${reactDOMVar}.default.render[(].+,`, "g"), (value) => {
-                        return value.replace(new RegExp(`${reactVar}.default.createElement(.+)`,"g"), (value) => {
-                            return `${reactVar}.default.createElement("div", null, [
-                                ${reactVar}.default.createElement("link", {key:"${filename}-css", rel:"stylesheet", type: "text/css", href: "${cssDir}"}),
-                                ${value.substring(0, value.length-1).replace("null",`{key:"${filename}-child"}`)}
-                            ]),`;
-                        })
-                    })
-                }
-            }
-            readFile(outputPath, (err, fileData) => {
-                if(err) writeFile(outputPath, data.code, writeOptions, (err) => { if(!err) reload(); });
-                else if( ! (fileData == data.code) ) writeFile(outputPath, data.code, writeOptions, (err) => { if(!err) reload(); });
-            });
-        }
+/**
+ * Check if file or folder is valid
+ * @param {Function} func
+ * @param {Array<any>} params
+ *
+ * @returns {Promise<any,Error>}
+ */
+function callbackToPromise(func, params = []) {
+  return new Promise((resolve, reject) => {
+    params.push((err, result) => {
+      if (err) reject(err);
+      else resolve(result);
     });
-    if(listen) watchFile(inputPath, { interval: 1000 }, (_) => { write(`Compiling ${path.basename(inputPath)} ... :D`); transformJSX(inputPath, outputPath, { flag: 'w' }, false);  });
+    func(...params);
+  });
 }
 
-function getVarName(line){
-    return line.match(/(var|const|let).+=/g)[0].replace(/(var|const|let)/g,"").replace(/ /g,"").replace(/=/g,"")
+/**
+ * Return True if is a dev mode
+ */
+function isDevMode() {
+  return process.env.NODE_ENV.toString().toLowerCase().includes("dev");
 }
 
-function getReactVar(code){
-    var reactVar = code.match(/(var|const|let).+=.+require.+("|')react("|').+;?/g);
-    return (reactVar) ? getVarName(reactVar[0]) : null;
+module.exports = async function (
+  dirname,
+  { reactDir, overridePlugins, overridePresets }
+) {
+  try {
+    //set additional plugin or presets:
+    if (overridePlugins && overridePlugins.length > 0) {
+      config_babelJSXtoJS.plugins = config_babelJSXtoJS.plugins.concat(
+        overridePlugins
+      );
+      morePlugins = overridePlugins;
+    }
+    if (overridePresets && overridPresets.length > 0) {
+      config_babelJSXtoJS.presets = config_babelJSXtoJS.presets.concat(
+        overridePresets
+      );
+    }
+    // check enviroment:
+    process.env.NODE_ENV = process.env.NODE_ENV ? process.env.NODE_ENV : "dev";
+    write(`Starting in ${process.env.NODE_ENV} mode`);
+    reactDir = path.join(dirname, reactDir);
+    //check dirs:
+    for (var dir of [dirname, reactDir]) {
+      const result = await callbackToPromise(stat, [dir]);
+      if (!result.isDirectory()) throw `${dir} needs to be a Directory`;
+    }
+    //make build dir:
+    const buildDir = path.join(dirname, "./react-builds");
+    await callbackToPromise(mkdir, [buildDir, { recursive: true }]);
+    //make lib dir:
+    const libDir = path.join(dirname, "./electron-jsx-lib");
+    await callbackToPromise(mkdir, [libDir, { recursive: true }]);
+    //write ElectronJSXCSS Component:
+    const result = await JSXtoJS(
+      path.join(__dirname, componentCssName + ".jsx")
+    );
+    componentCssSource = path.join(libDir, componentCssName + ".js");
+    await callbackToPromise(writeFile, [componentCssSource, result.code]);
+    //sync files and start render process:
+    await syncFolder(reactDir, buildDir, ".");
+    // set entry point:
+    var scripts = document.getElementsByTagName("script");
+    for (var script of scripts) {
+      if (script.getAttribute("react-src")) {
+        var reactSrc = script.getAttribute("react-src");
+        script.type = "module";
+        script.src = reactSrc
+          .replace(
+            path.basename(path.join(reactSrc, "..")),
+            path.basename(buildDir)
+          )
+          .replace(".jsx", ".js");
+      }
+    }
+  } catch (error) {
+    // if the main process have a error, display it:
+    write(error, true);
+    console.error(error);
+  }
+};
+
+// get more babel plugins for only syntax purposes
+function getSyntaxAddonPlugins() {
+  return morePlugins.filter((value) => value.includes("syntax"));
 }
 
-function getReactDOMVar(code){
-    var domVar = code.match(/(var|const|let).+=.+require.+("|')react-dom("|').+;?/g);
-    return (domVar) ? getVarName(domVar[0]) : null;
+/**
+ * Process file (copy or transpile if is a .js or .jsx)
+ * and watch for futures changes if watch
+ * parameter is set to True
+ *
+ * @param {String} buildDir
+ * @param {String} reactDir
+ * @param {String} relativeInputPath
+ * @param {Boolean} watch
+ * @param {Boolean} onlyListen
+ */
+async function renderFile(
+  buildDir,
+  reactDir,
+  relativeInputPath,
+  watch = isDevMode(),
+  onlyListen = false
+) {
+  // get info relative to path:
+  const filename = path.basename(relativeInputPath);
+  const isScript = filename.includes(".js") || filename.includes(".jsx");
+  const outputFilePath = path
+    .join(buildDir, relativeInputPath)
+    .replace(".jsx", ".js");
+  const inputFilePath = path.join(reactDir, relativeInputPath);
+  // transpile/copy file if onlyListen is false
+  if (!onlyListen) {
+    await mkdirIfNotExists(path.dirname(outputFilePath));
+    if (isScript) {
+      // transpile for CSS imports (babel-plugin-css-jsx-modules)
+      var css = await CSSinJSX(
+        inputFilePath,
+        path.join(buildDir, path.dirname(relativeInputPath))
+      );
+      await readAndCreateIfNotExists(outputFilePath);
+      await callbackToPromise(writeFile, [outputFilePath, css.code]);
+      // transpile for change relative imports to absolute imports
+      var imports = babel.transform(css.code, {
+        plugins: [
+          "@babel/plugin-syntax-jsx",
+          ...getSyntaxAddonPlugins(),
+          {
+            visitor: {
+              ImportDeclaration(_path) {
+                if (
+                  !path.isAbsolute(_path.node.source.value) &&
+                  _path.node.source.value[0] === "."
+                ) {
+                  _path.node.source.value = path.join(
+                    buildDir,
+                    path.dirname(relativeInputPath),
+                    _path.node.source.value
+                  );
+                }
+              },
+            },
+          },
+        ],
+      });
+      await callbackToPromise(writeFile, [outputFilePath, imports.code]);
+      // transpile to JSX format
+      var jsx = await JSXtoJS(outputFilePath);
+      await callbackToPromise(writeFile, [outputFilePath, jsx.code]);
+    } else {
+      // copy if the file is not a script
+      await callbackToPromise(copyFile, [inputFilePath, outputFilePath]);
+    }
+  }
+  if (watch) {
+    // watch file for futures changes
+    watchFile(inputFilePath, { interval: 1000 }, async (curr, prev) => {
+      if (curr.atime > prev.atime) {
+        write(`Rendering ${filename}...`);
+        await renderFile(buildDir, reactDir, relativeInputPath, false);
+        if (isScript) window.location.reload();
+      }
+    });
+  }
 }
 
+/**
+ * Create file if not exist and return the content, (usually "")
+ * @param {String} file
+ */
+async function readAndCreateIfNotExists(file) {
+  try {
+    return await callbackToPromise(readFile, [file]);
+  } catch {
+    await callbackToPromise(writeFile, [file, ""]);
+    return await callbackToPromise(readFile, [file]);
+  }
+}
 
-module.exports = mainCheckProcess;
+/**
+ * Transform JSX file to JS and return the code
+ * @param {String} file
+ */
+async function JSXtoJS(file) {
+  var code = await readAndCreateIfNotExists(file);
+  return await callbackToPromise(babel.transform, [code, config_babelJSXtoJS]);
+}
 
-function reload(){
-    window.location.reload();
+/**
+ * Transform CSS to handle with external component and return the code
+ * @param {String} file
+ * @param {String} rootDir
+ */
+async function CSSinJSX(file, rootDir) {
+  var code = await readAndCreateIfNotExists(file);
+  return await callbackToPromise(babel.transform, [
+    code,
+    {
+      plugins: [
+        "@babel/plugin-syntax-jsx",
+        ...getSyntaxAddonPlugins(),
+        [
+          "babel-plugin-css-jsx-modules",
+          {
+            componentName: componentCssName,
+            rootDir: rootDir,
+            componentDir: componentCssSource,
+          },
+        ],
+      ],
+    },
+  ]);
+}
+
+/**
+ * Listen two folders to sync files recursive (with special handle for .jsx and .js files)
+ * @param {String} inputRootFolder
+ * @param {String} outputRootFolder
+ * @param {String} relativePath
+ */
+async function syncFolder(inputRootFolder, outputRootFolder, relativePath) {
+  // info about the path:
+  var input = path.join(inputRootFolder, relativePath);
+  var output = path.join(outputRootFolder, relativePath);
+  var inputFiles = await callbackToPromise(readdir, [input]);
+  var outputFiles = await callbackToPromise(readdir, [output]);
+  // check if output dir have a file that doesn't have the input dir and delete it
+  for (var file of outputFiles) {
+    if (
+      !inputFiles.includes(file) &&
+      !inputFiles.includes(file.replace(".js", ".jsx"))
+    ) {
+      await callbackToPromise(unlink, [path.join(output, file)]);
+    }
+  }
+  // read files:
+  for (var file of inputFiles) {
+    const inspect = await callbackToPromise(stat, [path.join(input, file)]);
+    if (inspect.isDirectory()) {
+      // sync that folder if is a directory (Recursive model)
+      await mkdirIfNotExists(path.join(outputRootFolder, file));
+      syncFolder(
+        inputRootFolder,
+        outputRootFolder,
+        path.join(relativePath, file)
+      );
+    } else if (
+      !outputFiles.includes(file) &&
+      !outputFiles.includes(file.replace(".jsx", ".js"))
+    ) {
+      // if is a file ... Process the file
+      await renderFile(
+        outputRootFolder,
+        inputRootFolder,
+        path.join(relativePath, file),
+        true
+      );
+    } else {
+      // if is a file and the file exists, only listen for futures changes
+      await renderFile(
+        outputRootFolder,
+        inputRootFolder,
+        path.join(relativePath, file),
+        true,
+        true
+      );
+    }
+  }
+}
+
+/**
+ * make dir, returns false if the dir exists
+ * @param {String} path
+ */
+async function mkdirIfNotExists(path) {
+  try {
+    await callbackToPromise(mkdir, [path, { recursive: true }]);
+    return true;
+  } catch {
+    return false;
+  }
 }

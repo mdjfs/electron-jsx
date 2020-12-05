@@ -1,9 +1,8 @@
 {
   "name": "electron-jsx",
-  "version": "0.0.33",
-  "description": "Real Time compiler for Electron apps with React and node Integration",
+  "version": "0.0.4",
+  "description": "Real Time transpiler for Electron apps using Babel. You can use node modules here",
   "main": "index.js",
-  
   "repository": {
     "type": "git",
     "url": "https://github.com/mdjfs/electron-jsx.git"
@@ -25,7 +24,9 @@
     "@babel/core": "^7.12.3",
     "@babel/plugin-transform-modules-commonjs": "^7.12.1",
     "@babel/preset-react": "^7.12.5",
+    "babel-plugin-css-jsx-modules": "0.0.2",
     "fs": "0.0.1-security",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "react-helmet": "^6.1.0"
   }
 }
