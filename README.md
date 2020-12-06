@@ -10,7 +10,7 @@ There is a way. I think so
 
 # ✋ Before continuing, read this:
 
-This is BETA version, you can use that with issues/limitations, if you find any bug or you want to say how to fix something, you can go to https://github.com/mdjfs/electron-jsx/issues and if you can do a pull request
+This is a BETA version, you can use that with issues/limitations, if you find any bug or you want to say how to fix something, you can go to https://github.com/mdjfs/electron-jsx/issues and if you can do a pull request
 
 If you want to be a contributor and help, you will benefit many developers by making the library more stable
 

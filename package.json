@@ -1,6 +1,6 @@
 {
   "name": "electron-jsx",
-  "version": "0.0.41",
+  "version": "0.0.42",
   "description": "Real Time transpiler for Electron apps using Babel. You can use node modules here",
   "main": "index.js",
   "repository": {

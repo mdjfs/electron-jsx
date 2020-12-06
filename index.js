@@ -15,6 +15,7 @@ const {
   copyFile,
   unlink,
   readFile,
+  rmdir,
 } = require("fs");
 const path = require("path");
 const babel = require("@babel/core");
@@ -156,7 +157,7 @@ async function renderFile(
 ) {
   // get info relative to path:
   const filename = path.basename(relativeInputPath);
-  const isScript = filename.includes(".js") || filename.includes(".jsx");
+  const isScript = filename.endsWith(".js") || filename.endsWith(".jsx");
   const outputFilePath = path
     .join(buildDir, relativeInputPath)
     .replace(".jsx", ".js");
@@ -282,7 +283,13 @@ async function syncFolder(inputRootFolder, outputRootFolder, relativePath) {
       !inputFiles.includes(file) &&
       !inputFiles.includes(file.replace(".js", ".jsx"))
     ) {
-      await callbackToPromise(unlink, [path.join(output, file)]);
+      const inspect = await callbackToPromise(stat, [path.join(output, file)]);
+      if (inspect.isDirectory())
+        await callbackToPromise(rmdir, [
+          path.join(output, file),
+          { recursive: true },
+        ]);
+      else await callbackToPromise(unlink, [path.join(output, file)]);
     }
   }
   // read files:
