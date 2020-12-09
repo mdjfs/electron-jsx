@@ -19,7 +19,7 @@
     "nodeIntegration"
   ],
   "author": "Marcos Fuenmayor",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@babel/core": "^7.12.3",
     "@babel/plugin-transform-modules-commonjs": "^7.12.1",
