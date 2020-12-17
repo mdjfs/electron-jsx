@@ -15,23 +15,25 @@ const {
   copyFile,
   unlink,
   readFile,
-  rmdir,
+  rmdir
 } = require("fs");
 const path = require("path");
 const babel = require("@babel/core");
 
-// initial configs for babel:
-
-const config_babelJSXtoJS = {
-  presets: ["@babel/preset-react"],
-  plugins: ["@babel/plugin-transform-modules-commonjs"],
-};
+const fullPaths  = {
+  reactDir: undefined,
+  reactSrc: undefined,
+  electronLib: undefined
+}
 
 // var for dynamics config of babel custom css plugin:
 
 let componentCssName = "ElectronJSXCSS";
 let componentCssSource;
-let morePlugins = [];
+const addOn = {
+  presets: [],
+  plugins: []
+}
 
 /**
  *
@@ -49,12 +51,12 @@ function write(text, err = false) {
 
 /**
  * Check if file or folder is valid
- * @param {Function} func
+ * @param {CallableFunction} func
  * @param {Array<any>} params
  *
  * @returns {Promise<any,Error>}
  */
-function callbackToPromise(func, params = []) {
+function promisify(func, params = []) {
   return new Promise((resolve, reject) => {
     params.push((err, result) => {
       if (err) reject(err);
@@ -64,45 +66,26 @@ function callbackToPromise(func, params = []) {
   });
 }
 
-/**
- * Return True if is a dev mode
- */
+/** Return True if is a dev mode */
 function isDevMode() {
-  return process.env.NODE_ENV.toString().toLowerCase().includes("dev");
+  return (process.env.NODE_ENV && process.env.NODE_ENV != "production" || process.env.ELECTRON_IS_DEV);
 }
 
 module.exports = async function (
   dirname,
-  { reactDir, overridePlugins, overridePresets }
+  { reactDir, overridePlugins=[], overridePresets=[] }
 ) {
   try {
-    //set additional plugin or presets:
-    if (overridePlugins && overridePlugins.length > 0) {
-      config_babelJSXtoJS.plugins = config_babelJSXtoJS.plugins.concat(
-        overridePlugins
-      );
-      morePlugins = overridePlugins;
-    }
-    if (overridePresets && overridPresets.length > 0) {
-      config_babelJSXtoJS.presets = config_babelJSXtoJS.presets.concat(
-        overridePresets
-      );
-    }
-    // check enviroment:
-    process.env.NODE_ENV = process.env.NODE_ENV ? process.env.NODE_ENV : "dev";
-    write(`Starting in ${process.env.NODE_ENV} mode`);
-    reactDir = path.join(dirname, reactDir);
-    //check dirs:
-    for (var dir of [dirname, reactDir]) {
-      const result = await callbackToPromise(stat, [dir]);
-      if (!result.isDirectory()) throw `${dir} needs to be a Directory`;
-    }
-    //make build dir:
-    const buildDir = path.join(dirname, "./react-builds");
-    await callbackToPromise(mkdir, [buildDir, { recursive: true }]);
-    //make lib dir:
-    const libDir = path.join(dirname, "./electron-jsx-lib");
-    await callbackToPromise(mkdir, [libDir, { recursive: true }]);
+    // set additional plugin or presets:
+    addOn.plugins = overridePlugins;
+    addOn.presets = overridePresets;
+    write(`Starting in ${isDevMode() ? "development" : "production"} mode`);
+    // get paths:
+    var full_reactDir = path.join(dirname, reactDir);
+    var full_reactBuilds = path.join(dirname, "./react-builds");
+    var full_electronLib = path.join(dirname, "./electron-jsx-lib");
+    // make build and lib dir:
+    await _mkdirs([full_reactBuilds, full_electronLib]);
     //write ElectronJSXCSS Component:
     const result = await JSXtoJS(
       path.join(__dirname, componentCssName + ".jsx")
@@ -115,6 +98,8 @@ module.exports = async function (
     var scripts = document.getElementsByTagName("script");
     for (var script of scripts) {
       if (script.getAttribute("react-src")) {
+        
+        window.addEventListener("error", (e) => {console.log(`El erroj: ${e}`)});
         var reactSrc = script.getAttribute("react-src");
         script.type = "module";
         script.src = reactSrc
@@ -284,11 +269,7 @@ async function syncFolder(inputRootFolder, outputRootFolder, relativePath) {
       !inputFiles.includes(file.replace(".js", ".jsx"))
     ) {
       const inspect = await callbackToPromise(stat, [path.join(output, file)]);
-      if (inspect.isDirectory())
-        await callbackToPromise(rmdir, [
-          path.join(output, file),
-          { recursive: true },
-        ]);
+      if(inspect.isDirectory()) await callbackToPromise(rmdir, [path.join(output, file), {recursive: true}])
       else await callbackToPromise(unlink, [path.join(output, file)]);
     }
   }
@@ -327,15 +308,152 @@ async function syncFolder(inputRootFolder, outputRootFolder, relativePath) {
   }
 }
 
+async function build(input, output){
+  var code = await promisify(readdir, [input]);
+  babel.transform()
+  // manage imports and handle CSS:
+  var cssImported = false;
+  code = babel.transformAsync(code, {
+    plugins: [
+      "@babel/plugin-syntax-jsx",
+      {
+        visitor: {
+          ImportDeclaration(_path) {
+            const value = _path.node.source.value;
+            const isRelativePath = !path.isAbsolute(value) && value[0] === ".";
+            if(isRelativePath){
+              if(path.endsWith(".css")){
+                if(!cssImported){
+                  // change import "example.css" to import {componentName} from "./electron-jsx-lib/{componentName}"
+                  _path.node.source.value = path.join("./electron-jsx-lib", componentCssName);
+                  _path.node.specifiers = [babel.types.importDefaultSpecifier(babel.types.identifier(capitalize(componentCssName)))];
+                }
+                else{
+
+                }
+              }else{
+
+              }
+            }
+            if (isRelativePath && path.endsWith(".css") && !cssImported) {
+              // change import "example.css" to import {componentName} from "./electron-jsx-lib/{componentName}"
+              _path.node.source.value = path.join("./electron-jsx-lib", componentCssName);
+              _path.node.specifiers = [babel.types.importDefaultSpecifier(babel.types.identifier(capitalize(componentCssName)))];
+            }else if(isRelativePath){
+              _path.node.source.value = path.join("./react-builds",_path.node.source.value);
+            }
+          },
+        },
+      },
+    ],
+  }).code;
+  // transform JSX:
+  code = await babel.transformAsync(code, {
+    presets: ["@babel/preset-react"],
+    plugins: ["@babel/plugin-transform-modules-commonjs"],
+  }).code;
+  code = await promisify(babel.transform, [code, ]).code;
+}
+
 /**
- * make dir, returns false if the dir exists
- * @param {String} path
+ * make dir, returns false if any dir exists
+ * @param {Array<String>} paths
  */
-async function mkdirIfNotExists(path) {
-  try {
-    await callbackToPromise(mkdir, [path, { recursive: true }]);
-    return true;
-  } catch {
-    return false;
+async function _mkdirs(paths) {
+  var err = false;
+  for(const path of paths){
+    try{
+      await promisify(mkdir, [path, { recursive: true }]);
+    }
+    catch{
+      err = true;
+    }
   }
+  return err;
+}
+
+
+const updateComponentWithCss = {
+  JSXElement(path) {
+    if (
+      this.reactDomVar !== null &&
+      path.parent.type === "CallExpression" &&
+      path.parent.callee.object.name === this.reactDomVar &&
+      path.parent.callee.property.name === "render"
+    ) {
+      const identifier = t.JSXIdentifier(this.opts.componentName.toString());
+      path.parent.arguments[0] = t.JSXElement(
+        t.JSXOpeningElement(identifier, [
+          t.JSXAttribute(
+            t.JSXIdentifier("link"),
+            t.StringLiteral(this.cssPath.toString())
+          ),
+        ]),
+        t.JSXClosingElement(identifier),
+        [path.node]
+      );
+    }
+  },
+  ExportDefaultDeclaration(path) {
+    const name = path.node.declaration.name;
+    // detect if is export default Component;
+    if (name) {
+      // construct the JSX for the default export if the default export is a name
+      const JSXExport = t.JSXElement(
+        t.JSXOpeningElement(t.JSXIdentifier(name), []),
+        t.JSXClosingElement(t.JSXIdentifier(name)),
+        [],
+        false
+      );
+      const JSXGlobal = getComponentForCss(
+        this.opts.componentName,
+        this.cssPath,
+        [JSXExport]
+      );
+      path.node.declaration = t.functionDeclaration(
+        t.identifier("_default_css_jsx"),
+        [],
+        t.blockStatement([t.returnStatement(JSXGlobal)]),
+        false,
+        false
+      );
+    } else if (path.node.declaration.type == "FunctionDeclaration") {
+      // construct the JSX for the default export if the default export is a function
+      const func = path.node.declaration.body;
+      if (func.body.length > 0) {
+        for (var statement of func.body) {
+          if (
+            statement.type === "ReturnStatement" &&
+            statement.argument.type === "JSXElement"
+          ) {
+            statement.argument = getComponentForCss(
+              this.opts.componentName,
+              this.cssPath,
+              [statement.argument]
+            );
+          }
+        }
+      }
+    }
+  },
+};
+
+function capitalize(string){
+  return string[0].toUpperCase() + string.substr(1, string.length);
+}
+
+
+async function getVar_ReactDOM(code){
+  var reactDOM = null;
+  await babel.parseAsync(code, {
+    ImportDeclaration(_path){
+      const value = _path.node.source.value;
+      if(value === "react-dom" )
+        for (var specifier of _path.node.specifiers) {
+          if (specifier.type === "ImportDefaultSpecifier") 
+            reactDOM = specifier.local.name;
+      }
+    }
+  })
+  return reactDOM;
 }
