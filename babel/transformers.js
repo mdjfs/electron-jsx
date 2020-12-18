@@ -29,7 +29,7 @@ function manageCssImport(name){
                 const value = _path.node.source.value;
                 if(value.endsWith(".css")){
                     if(!isCss){
-                        _path.node.source.value = `electron-jsx/css`;
+                        _path.node.source.value = `electron-jsx/builds/${name}`;
                         _path.node.specifiers = [babel.types.importDefaultSpecifier(babel.types.identifier(capitalize(name)))];
                         isCss = true;
                     }
@@ -140,3 +140,8 @@ function makeJSXParent(name, links, childrens) {
   };
 
   module.exports = {writeCssHandler, manageImport, manageCssImport};
+
+  
+function capitalize(string){
+    return string[0].toUpperCase() + string.substr(1, string.length);
+  }

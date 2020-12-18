@@ -15,16 +15,29 @@ const {
   copyFile,
   unlink,
   readFile,
-  rmdir
+  rmdir,
+  watch,
+  access,
+  rename,
+  rm,
+  read
 } = require("fs");
 const path = require("path");
 const babel = require("@babel/core");
+const {promisify} = require("util");
+const {reportBuildError} = require("react-error-overlay");
 
-const fullPaths  = {
-  reactDir: undefined,
-  reactSrc: undefined,
-  electronLib: undefined
-}
+const {writeCssHandler, manageImport, manageCssImport} = require("./babel/transformers");
+const {getReactDOM, getCssImports} = require("./babel/parsers");
+
+const config = require("./config.json");
+const { sync } = require("./test");
+
+const readFileAsync = promisify(readFile);
+const writeFileAsync = promisify(writeFile);
+const readDirAsync = promisify(readdir);
+
+var ELECTRON_DIRNAME;
 
 // var for dynamics config of babel custom css plugin:
 
@@ -35,35 +48,18 @@ const addOn = {
   plugins: []
 }
 
-/**
- *
+/** Write in the console
  * @param {String} text
- * @param {Boolean} err
  */
-function write(text, err = false) {
-  text = text ? text.toString() : undefined;
-  if (text) {
-    err
-      ? process.stderr.write(`[ERROR] electron-jsx: ${text}\n`)
-      : process.stdout.write(`electron-jsx:  ${text}\n`);
-  }
+function write(text) {
+  process.stdout.write(`\x1b[36melectron-jsx:\x1b[37m ${text.toString()}\n`);
 }
 
-/**
- * Check if file or folder is valid
- * @param {CallableFunction} func
- * @param {Array<any>} params
- *
- * @returns {Promise<any,Error>}
+/** Write error in the console
+ * @param {String} text
  */
-function promisify(func, params = []) {
-  return new Promise((resolve, reject) => {
-    params.push((err, result) => {
-      if (err) reject(err);
-      else resolve(result);
-    });
-    func(...params);
-  });
+function writeError(text) {
+  process.stderr.write(`\x1b[41m[ERROR]\x1b[40m \x1b[36melectron-jsx:\x1b[37m ${text.toString()}\n`);
 }
 
 /** Return True if is a dev mode */
@@ -71,389 +67,189 @@ function isDevMode() {
   return (process.env.NODE_ENV && process.env.NODE_ENV != "production" || process.env.ELECTRON_IS_DEV);
 }
 
-module.exports = async function (
-  dirname,
-  { reactDir, overridePlugins=[], overridePresets=[] }
-) {
-  try {
-    // set additional plugin or presets:
-    addOn.plugins = overridePlugins;
-    addOn.presets = overridePresets;
-    write(`Starting in ${isDevMode() ? "development" : "production"} mode`);
-    // get paths:
-    var full_reactDir = path.join(dirname, reactDir);
-    var full_reactBuilds = path.join(dirname, "./react-builds");
-    var full_electronLib = path.join(dirname, "./electron-jsx-lib");
-    // make build and lib dir:
-    await _mkdirs([full_reactBuilds, full_electronLib]);
-    //write ElectronJSXCSS Component:
-    const result = await JSXtoJS(
-      path.join(__dirname, componentCssName + ".jsx")
-    );
-    componentCssSource = path.join(libDir, componentCssName + ".js");
-    await callbackToPromise(writeFile, [componentCssSource, result.code]);
-    //sync files and start render process:
-    await syncFolder(reactDir, buildDir, ".");
-    // set entry point:
-    var scripts = document.getElementsByTagName("script");
-    for (var script of scripts) {
-      if (script.getAttribute("react-src")) {
-        
-        window.addEventListener("error", (e) => {console.log(`El erroj: ${e}`)});
-        var reactSrc = script.getAttribute("react-src");
-        script.type = "module";
-        script.src = reactSrc
-          .replace(
-            path.basename(path.join(reactSrc, "..")),
-            path.basename(buildDir)
-          )
-          .replace(".jsx", ".js");
-      }
-    }
-  } catch (error) {
-    // if the main process have a error, display it:
-    write(error, true);
-    console.error(error);
-  }
+/**
+ * Transpiler in real time for Electron React Apps file-based
+ * @param {String} dirname 
+ * @param {{reactDir: String}} param1 
+ */
+module.exports = function (dirname, { reactDir }) {
+  write(`Starting in ${isDevMode() ? "development" : "production"} mode`);
+  const reactBuilds = path.join(dirname, "./react-builds");
+  sync(path.join(dirname, reactDir), reactBuilds, isDevMode(), (event, name) => {
+    render(reactBuilds, event, name);
+  });
+  sync(path.join(__dirname, ".jsx"), path.join(__dirname, "./builds"), false, (event, name) => {
+    render(path.join(__dirname, "./builds"), event, name);
+  });
+  ELECTRON_DIRNAME = dirname;
+  load();
 };
 
-// get more babel plugins for only syntax purposes
-function getSyntaxAddonPlugins() {
-  return morePlugins.filter((value) => value.includes("syntax"));
-}
 
 /**
- * Process file (copy or transpile if is a .js or .jsx)
- * and watch for futures changes if watch
- * parameter is set to True
- *
- * @param {String} buildDir
- * @param {String} reactDir
- * @param {String} relativeInputPath
- * @param {Boolean} watch
- * @param {Boolean} onlyListen
+ * @param {HTMLScriptElement} scriptDom if is not null, the main script is rendered
  */
-async function renderFile(
-  buildDir,
-  reactDir,
-  relativeInputPath,
-  watch = isDevMode(),
-  onlyListen = false
-) {
-  // get info relative to path:
-  const filename = path.basename(relativeInputPath);
-  const isScript = filename.endsWith(".js") || filename.endsWith(".jsx");
-  const outputFilePath = path
-    .join(buildDir, relativeInputPath)
-    .replace(".jsx", ".js");
-  const inputFilePath = path.join(reactDir, relativeInputPath);
-  // transpile/copy file if onlyListen is false
-  if (!onlyListen) {
-    await mkdirIfNotExists(path.dirname(outputFilePath));
-    if (isScript) {
-      // transpile for CSS imports (babel-plugin-css-jsx-modules)
-      var css = await CSSinJSX(
-        inputFilePath,
-        path.join(buildDir, path.dirname(relativeInputPath))
-      );
-      await readAndCreateIfNotExists(outputFilePath);
-      await callbackToPromise(writeFile, [outputFilePath, css.code]);
-      // transpile for change relative imports to absolute imports
-      var imports = babel.transform(css.code, {
-        plugins: [
-          "@babel/plugin-syntax-jsx",
-          ...getSyntaxAddonPlugins(),
-          {
-            visitor: {
-              ImportDeclaration(_path) {
-                if (
-                  !path.isAbsolute(_path.node.source.value) &&
-                  _path.node.source.value[0] === "."
-                ) {
-                  _path.node.source.value = path.join(
-                    buildDir,
-                    path.dirname(relativeInputPath),
-                    _path.node.source.value
-                  );
-                }
-              },
-            },
-          },
-        ],
-      });
-      await callbackToPromise(writeFile, [outputFilePath, imports.code]);
-      // transpile to JSX format
-      var jsx = await JSXtoJS(outputFilePath);
-      await callbackToPromise(writeFile, [outputFilePath, jsx.code]);
-    } else {
-      // copy if the file is not a script
-      await callbackToPromise(copyFile, [inputFilePath, outputFilePath]);
+function load(scriptDom=null){
+  if(!scriptDom){ // look for scripts with react-src attribute
+    for(const script of document.getElementsByTagName("script")){
+      if(script.getAttribute("react-src")) load(script);
     }
+  }else{
+    const src = path.join(ELECTRON_DIRNAME, scriptDom.getAttribute("react-src"));
+    readFile(src, {encoding: "utf-8"}, (err, data) => {
+      if(!err){
+        buildString(data, true).then(data => {
+          scriptDom.innerText = `
+            try{
+              ${data}
+            }catch(e){
+              var {reportRuntimeError} = require("react-error-overlay");
+              reportRuntimeError(e);
+            }`
+        }).catch(e => reportBuildError(e));
+      }else writeError(err);
+    })
   }
-  if (watch) {
-    // watch file for futures changes
-    watchFile(inputFilePath, { interval: 1000 }, async (curr, prev) => {
-      if (curr.atime > prev.atime) {
-        write(`Rendering ${filename}...`);
-        await renderFile(buildDir, reactDir, relativeInputPath, false);
-        if (isScript) window.location.reload();
-      }
+}
+
+
+/**
+ * Event handler when file changes,rename,delete or create
+ * @param {String} reactBuilds react builds path
+ * @param {String} event changeEvent
+ * @param {String} name name of relative path
+ */
+function render(reactBuilds, event, name){
+  const isReact = name.endsWith(".jsx");
+  const isScript = name.endsWith(".js") || isReact;
+  const isAddOrChange = (event === "add" || event === "change");
+  const isFolder = name.endsWith("\\");
+  if(event === "change" && !isFolder) write(`${(isScript) ? "Building" : "Copying"} ${name} ...`);
+  if(isReact){
+    rename(path.join(reactBuilds, name), path.join(reactBuilds, name.replace(".js",".jsx")), (err) => {
+      if(!err){
+        if(isAddOrChange) build(path.join(folder, name), path.join(reactBuilds, name)).then(ok => { if(ok) load() });
+      }else writeError(err);
+    });
+  } else if(isScript && isAddOrChange){
+    build(path.join(folder, name), path.join(reactBuilds, name)).then(ok => { if(ok) load() });;
+  } else if (isAddOrChange){
+    copyFile(path.join(folder, name), path.join(reactBuilds, name), (err) => {
+      if(!err) reload(); else writeError(err);
     });
   }
+
+  if(!isAddOrChange){
+    access(path.join(folder, name), (err) => {
+      if(err){
+        // rename
+        if(isFolder) sync(path.join(folder, name), path.join(reactBuilds, name), false, (event, name) => { render(reactBuilds, event, name); });
+        else rm(path.join(folder, name));
+      } else {
+        // add
+        render(reactBuilds, "add", name);
+      }
+  })
 }
 
 /**
- * Create file if not exist and return the content, (usually "")
- * @param {String} file
+ * Return changes in folder or file
+ * @callback changeCallback
+ * @param {String} changeEvent - "remove", "add", "add_or_rename", "change"
+ * @param {string} relativePath - relativePath of folder/file 
  */
-async function readAndCreateIfNotExists(file) {
-  try {
-    return await callbackToPromise(readFile, [file]);
-  } catch {
-    await callbackToPromise(writeFile, [file, ""]);
-    return await callbackToPromise(readFile, [file]);
+
+/**
+ * Actions when the file is synchronized
+ * @param {changeCallback} addonActions
+ * @param {string} relativePath - relativePath of file 
+ */
+function sync(main, copy, watch=false, addonActions){
+  rmdir(copy,{recursive: true}, (_err) => {
+       mkdir(copy, (_err) => {
+         readdir(main, {encoding: "utf-8"}, (err, files) => {
+           if(!err){
+             for(const file of files){
+               const dir = path.join(main, file);
+               stat(dir, (err, stats) => {
+                 if(!err){
+                   if(stats.isDirectory()){
+                     mkdir(path.join(copy, file), (_err) => {
+                       sync(dir, path.join(copy, file), false, addonActions);
+                     })
+                   }
+                   else{
+                     copyFile(dir, path.join(copy, file), () => {
+                       addonActions("add", path.join(copy, file));
+                     })
+                   }
+                 }else write(err, true);
+               })
+             }
+           }else write(err, true);
+         })
+     })
+  })
+
+  if(watch){
+      listen(main, addonActions)
   }
 }
 
+
 /**
- * Transform JSX file to JS and return the code
- * @param {String} file
- */
-async function JSXtoJS(file) {
-  var code = await readAndCreateIfNotExists(file);
-  return await callbackToPromise(babel.transform, [code, config_babelJSXtoJS]);
+* Listen folder in mode recursive
+* @param {String} folder 
+* @param {changeCallback} handler 
+*/
+function listen(folder, handler){
+  watch(folder, {encoding: "utf-8", recursive: true}, (event, name) => {
+    access(path.join(folder, name), (err) => {
+      let status = (err && err.code === 'ENOENT') ? "remove" : (event === "rename") ? "add_or_rename" : "change";
+      handler(status, name);
+    })
+  })
 }
 
 /**
- * Transform CSS to handle with external component and return the code
- * @param {String} file
- * @param {String} rootDir
+ *  core of electron-jsx, Transpile script string
+ * @param {String} code code to be transpiled
+ * @param {Boolean} reactBuildImport add "./react-builds" for local imports
  */
-async function CSSinJSX(file, rootDir) {
-  var code = await readAndCreateIfNotExists(file);
-  return await callbackToPromise(babel.transform, [
-    code,
-    {
-      plugins: [
-        "@babel/plugin-syntax-jsx",
-        ...getSyntaxAddonPlugins(),
-        [
-          "babel-plugin-css-jsx-modules",
-          {
-            componentName: componentCssName,
-            rootDir: rootDir,
-            componentDir: componentCssSource,
-          },
-        ],
-      ],
-    },
-  ]);
-}
-
-/**
- * Listen two folders to sync files recursive (with special handle for .jsx and .js files)
- * @param {String} inputRootFolder
- * @param {String} outputRootFolder
- * @param {String} relativePath
- */
-async function syncFolder(inputRootFolder, outputRootFolder, relativePath) {
-  // info about the path:
-  var input = path.join(inputRootFolder, relativePath);
-  var output = path.join(outputRootFolder, relativePath);
-  var inputFiles = await callbackToPromise(readdir, [input]);
-  var outputFiles = await callbackToPromise(readdir, [output]);
-  // check if output dir have a file that doesn't have the input dir and delete it
-  for (var file of outputFiles) {
-    if (
-      !inputFiles.includes(file) &&
-      !inputFiles.includes(file.replace(".js", ".jsx"))
-    ) {
-      const inspect = await callbackToPromise(stat, [path.join(output, file)]);
-      if(inspect.isDirectory()) await callbackToPromise(rmdir, [path.join(output, file), {recursive: true}])
-      else await callbackToPromise(unlink, [path.join(output, file)]);
-    }
-  }
-  // read files:
-  for (var file of inputFiles) {
-    const inspect = await callbackToPromise(stat, [path.join(input, file)]);
-    if (inspect.isDirectory()) {
-      // sync that folder if is a directory (Recursive model)
-      await mkdirIfNotExists(path.join(outputRootFolder, file));
-      syncFolder(
-        inputRootFolder,
-        outputRootFolder,
-        path.join(relativePath, file)
-      );
-    } else if (
-      !outputFiles.includes(file) &&
-      !outputFiles.includes(file.replace(".jsx", ".js"))
-    ) {
-      // if is a file ... Process the file
-      await renderFile(
-        outputRootFolder,
-        inputRootFolder,
-        path.join(relativePath, file),
-        true
-      );
-    } else {
-      // if is a file and the file exists, only listen for futures changes
-      await renderFile(
-        outputRootFolder,
-        inputRootFolder,
-        path.join(relativePath, file),
-        true,
-        true
-      );
-    }
-  }
-}
-
-async function build(input, output){
-  var code = await promisify(readdir, [input]);
-  babel.transform()
-  // manage imports and handle CSS:
-  var cssImported = false;
-  code = babel.transformAsync(code, {
+async function buildString(code, reactBuildImport=false){
+  var cssImports = await getCssImports(code);
+  var nameReactDOM = await getReactDOM(code);
+  code = await babel.transformAsync(code, {
     plugins: [
       "@babel/plugin-syntax-jsx",
-      {
-        visitor: {
-          ImportDeclaration(_path) {
-            const value = _path.node.source.value;
-            const isRelativePath = !path.isAbsolute(value) && value[0] === ".";
-            if(isRelativePath){
-              if(path.endsWith(".css")){
-                if(!cssImported){
-                  // change import "example.css" to import {componentName} from "./electron-jsx-lib/{componentName}"
-                  _path.node.source.value = path.join("./electron-jsx-lib", componentCssName);
-                  _path.node.specifiers = [babel.types.importDefaultSpecifier(babel.types.identifier(capitalize(componentCssName)))];
-                }
-                else{
-
-                }
-              }else{
-
-              }
-            }
-            if (isRelativePath && path.endsWith(".css") && !cssImported) {
-              // change import "example.css" to import {componentName} from "./electron-jsx-lib/{componentName}"
-              _path.node.source.value = path.join("./electron-jsx-lib", componentCssName);
-              _path.node.specifiers = [babel.types.importDefaultSpecifier(babel.types.identifier(capitalize(componentCssName)))];
-            }else if(isRelativePath){
-              _path.node.source.value = path.join("./react-builds",_path.node.source.value);
-            }
-          },
-        },
-      },
-    ],
+      (reactBuildImport) ? manageImport() : {},
+      (cssImports.length > 0) ? manageCssImport(config.libraries.cssHandler) : {},
+      (cssImports.length > 0) ? writeCssHandler(config.libraries.cssHandler, cssImports, nameReactDOM) : {}
+    ]
   }).code;
-  // transform JSX:
   code = await babel.transformAsync(code, {
     presets: ["@babel/preset-react"],
     plugins: ["@babel/plugin-transform-modules-commonjs"],
   }).code;
-  code = await promisify(babel.transform, [code, ]).code;
+  return code;
 }
 
 /**
- * make dir, returns false if any dir exists
- * @param {Array<String>} paths
+ *  core of electron-jsx, Transpile script file
+ * @param {String} inputPath file to be transpiled
+ * @param {String} outputPath dir to write file transpiled
  */
-async function _mkdirs(paths) {
-  var err = false;
-  for(const path of paths){
-    try{
-      await promisify(mkdir, [path, { recursive: true }]);
-    }
-    catch{
-      err = true;
-    }
+async function build(inputPath, outputPath){
+  try{
+    var code = await readFileAsync(inputPath, {encoding: "utf-8"});
+    code = await buildString(code);
+    await writeFileAsync(outputPath, code);
+    return true;
+  }catch(e){
+    reportBuildError(e.toString());
+    return false;
   }
-  return err;
 }
 
 
-const updateComponentWithCss = {
-  JSXElement(path) {
-    if (
-      this.reactDomVar !== null &&
-      path.parent.type === "CallExpression" &&
-      path.parent.callee.object.name === this.reactDomVar &&
-      path.parent.callee.property.name === "render"
-    ) {
-      const identifier = t.JSXIdentifier(this.opts.componentName.toString());
-      path.parent.arguments[0] = t.JSXElement(
-        t.JSXOpeningElement(identifier, [
-          t.JSXAttribute(
-            t.JSXIdentifier("link"),
-            t.StringLiteral(this.cssPath.toString())
-          ),
-        ]),
-        t.JSXClosingElement(identifier),
-        [path.node]
-      );
-    }
-  },
-  ExportDefaultDeclaration(path) {
-    const name = path.node.declaration.name;
-    // detect if is export default Component;
-    if (name) {
-      // construct the JSX for the default export if the default export is a name
-      const JSXExport = t.JSXElement(
-        t.JSXOpeningElement(t.JSXIdentifier(name), []),
-        t.JSXClosingElement(t.JSXIdentifier(name)),
-        [],
-        false
-      );
-      const JSXGlobal = getComponentForCss(
-        this.opts.componentName,
-        this.cssPath,
-        [JSXExport]
-      );
-      path.node.declaration = t.functionDeclaration(
-        t.identifier("_default_css_jsx"),
-        [],
-        t.blockStatement([t.returnStatement(JSXGlobal)]),
-        false,
-        false
-      );
-    } else if (path.node.declaration.type == "FunctionDeclaration") {
-      // construct the JSX for the default export if the default export is a function
-      const func = path.node.declaration.body;
-      if (func.body.length > 0) {
-        for (var statement of func.body) {
-          if (
-            statement.type === "ReturnStatement" &&
-            statement.argument.type === "JSXElement"
-          ) {
-            statement.argument = getComponentForCss(
-              this.opts.componentName,
-              this.cssPath,
-              [statement.argument]
-            );
-          }
-        }
-      }
-    }
-  },
-};
 
-function capitalize(string){
-  return string[0].toUpperCase() + string.substr(1, string.length);
-}
-
-
-async function getVar_ReactDOM(code){
-  var reactDOM = null;
-  await babel.parseAsync(code, {
-    ImportDeclaration(_path){
-      const value = _path.node.source.value;
-      if(value === "react-dom" )
-        for (var specifier of _path.node.specifiers) {
-          if (specifier.type === "ImportDefaultSpecifier") 
-            reactDOM = specifier.local.name;
-      }
-    }
-  })
-  return reactDOM;
-}
