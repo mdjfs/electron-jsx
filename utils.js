@@ -7,7 +7,7 @@ const {
     watch,
     access,
   } = require("fs");
-
+const path = require("path");
 
 /**
 * Return changes in folder or file
@@ -34,12 +34,14 @@ function sync(main, copy, {watch, base}, addonActions){
                     if(!err){
                         if(stats.isDirectory()){
                         mkdir(path.join(copy, file), (_err) => {
-                            sync(dir, path.join(copy, file), {watch: false, base: file}, addonActions);
+                            const relativePath = (!base) ? file : path.join(base, file);
+                            sync(dir, path.join(copy, file), {watch: false, base: relativePath}, addonActions);
                         })
                         }
                         else{
+                            const relativePath = base ? base : ".";
                           copyFile(dir, path.join(copy, file), () => {
-                            addonActions("add", path.join(base?base:".",file));
+                            addonActions("add", path.join(relativePath,file));
                           })
                         }
                     }else writeError(err);
@@ -90,4 +92,13 @@ function isDevMode() {
     return (process.env.NODE_ENV != "production" || process.env.ELECTRON_IS_DEV);
 }
 
-module.exports = {sync, write, writeError, isDevMode};
+/** deletes cache for specific module */
+function requireUncached(fullPath) {
+    try{
+        delete require.cache[require.resolve(fullPath)];
+    }catch(e){
+        writeError(e)
+    }
+}
+
+module.exports = {sync, write, writeError, isDevMode, requireUncached};

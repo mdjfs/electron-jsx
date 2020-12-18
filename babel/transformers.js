@@ -109,6 +109,7 @@ function writeCssHandler(name, links, reactVar){
  * @returns {{visitor:{}}}
  */
 function basicJSX(name){
+    console.log(name);
     const t = babel.types;
     return t.JSXElement(
         t.JSXOpeningElement(t.JSXIdentifier(name), []),
@@ -131,8 +132,7 @@ function makeJSXParent(name, links, childrens) {
     const identifier = t.JSXIdentifier(capitalize(name));
     return t.JSXElement(
       t.JSXOpeningElement(identifier, [
-        t.JSXAttribute(t.JSXIdentifier("links"), t.jSXExpressionContainer(t.arrayExpression(links)) ),
-        t.JSXAttribute(t.JSXIdentifier("path"), t.jSXExpressionContainer(t.identifier("__dirname")))
+        t.JSXAttribute(t.JSXIdentifier("links"), t.jSXExpressionContainer(t.arrayExpression(links)))
       ]),
       t.JSXClosingElement(identifier),
       childrens
@@ -144,4 +144,4 @@ function makeJSXParent(name, links, childrens) {
   
 function capitalize(string){
     return string[0].toUpperCase() + string.substr(1, string.length);
-  }
+}

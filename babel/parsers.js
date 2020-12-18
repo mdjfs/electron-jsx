@@ -1,4 +1,5 @@
 const babel = require("@babel/core");
+const path = require("path");
 
 /** Get reactDOM var name
  * @param {String} code - code to parse
@@ -21,14 +22,15 @@ async function getReactDOM(code){
 
 /** Get all CSS links in a file
  * @param {String} code - code to parse
+ * @param {String} basePath - set a base path to relative link
  */
-  async function getCssImports(code){
+  async function getCssImports(code, basePath){
       var links = [];
       var node = await babel.parseAsync(code, { plugins: ["@babel/plugin-syntax-jsx"] });
       for(var element of node.program.body){
           if(babel.types.isImportDeclaration(element)){
             const value = element.source.value;
-            if(value[0] === "." && value.endsWith(".css")) links.push(value);
+            if(value[0] === "." && value.endsWith(".css")) links.push(path.join(path.dirname(basePath), value));
           }
       }
       return links;

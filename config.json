@@ -1,9 +1,13 @@
 {
     "libraries":{
-        "cssHandler":"Css",
+        "cssHandler":"css",
         "cssHandlerPath":"electron-jsx/builds/css"
     },
     "constants":{
         "HTML_DOM_IDENTIFIER": "electron-jsx-dynamic"
+    },
+    "dom":{
+        "referenceName":"index.html",
+        "referencePath":"./cache"
     }
 }

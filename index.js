@@ -12,14 +12,17 @@ const {
   copyFile,
   readFile,
   rename,
-  rm
+  rmdir,
+  unlink,
+  mkdir
 } = require("fs");
 const path = require("path");
 
 const {build, buildString} = require("./babel/core");
-const { injectScript, getReference } = require("./dom");
+const { injectScript, makeReference, getIframe, injectScriptIntoIframe } = require("./dom");
 const printError = require("./exceptions");
-const { writeError, isDevMode } = require("./utils");
+const { writeError, isDevMode, write, sync, requireUncached} = require("./utils");
+const config = require("./config.json");
 
 var ELECTRON_DIRNAME; // <-- path
 
@@ -31,13 +34,13 @@ var Tasks = [];
 * @param {{reactDir: String}} param1 
 */
 module.exports = function (dirname, { reactDir }) {
-  if(!isDevMode()) write("Starting in production mode, no reloads.");
+  write(`Starting in ${isDevMode() ? "development" : "production"} mode${isDevMode() ? "" : ". No reloads."}`);
   const reactBuilds = path.join(dirname, "./react-builds");
-  sync(path.join(dirname, reactDir), reactBuilds, isDevMode(), (event, name) => {
+  sync(path.join(dirname, reactDir), reactBuilds, { watch:isDevMode()} , (event, name) => {
       render(path.join(dirname, reactDir), reactBuilds, event, name);
   });
-  sync(path.join(__dirname, "./jsx"), path.join(__dirname, "./builds"), false, (event, name) => {
-      render(path.join(__dirname, "./jsx"), path.join(__dirname, "./builds"), event, name);
+  sync(path.join(__dirname, "./jsx"), path.join(__dirname, "./builds"), {watch: false}, (event, name) => {
+      render(path.join(__dirname, "./jsx"), path.join(__dirname, "./builds"), event, name, true);
   });
   ELECTRON_DIRNAME = dirname;
   load();
@@ -56,25 +59,29 @@ function load(scriptDom=null){
     const src = path.join(ELECTRON_DIRNAME, scriptDom.getAttribute("react-src"));
     readFile(src, {encoding: "utf-8"}, (err, data) => {
       if(!err){
-        buildString(data, true).then(transpile => {
+        buildString(data, "./react-builds").then(transpile => {
           const code = `
           var printError = require("electron-jsx/exceptions");
           try{
             ${transpile}
             printError(null);
           }catch(e){
-            printError(e.toString(), "${src.replace(/\\/g,"\\\\")}");
+            printError(e.toString());
           }`;
           if(isDevMode()){
-            injectScript(document.head, code);
+            injectScriptIntoIframe(code);
           }else{
-            var reference = getReference(document);
-            injectScript(reference.head, code);
+            injectScript(document.head, code);
           }
         }).catch(e => (isDevMode()) ? printError(e, src) : console.error(e));
       }else writeError(err);
     })
   }
+}
+
+function reload(module){
+  requireUncached(module);
+  load();
 }
 
 /**
@@ -83,12 +90,9 @@ function load(scriptDom=null){
 * @param {String} secondFolder folder contains transpiled files
 * @param {String} event changeEvent
 * @param {String} name name of relative path
+* @param {Boolean} isInternal if is internal then not print erros in electron app
 */
-function render(mainFolder, secondFolder, event, name){
-  function clearProcess(id){
-    Tasks = Tasks.filter(value => value !== id);
-  }
-  
+function render(mainFolder, secondFolder, event, name, isInternal=false){
   const input = path.join(mainFolder, name);
   const output = path.join(secondFolder, name);
   const isReact = name.endsWith(".jsx");
@@ -96,7 +100,6 @@ function render(mainFolder, secondFolder, event, name){
   const isChange = (event === "change")
   const isAdd = (event === "add");
   const isCalled = Tasks.includes(name);
-
   let clearProcess = (id) => {
     Tasks = Tasks.filter(value => value !== id);
   }
@@ -104,9 +107,10 @@ function render(mainFolder, secondFolder, event, name){
   let scriptHandler = (input, output) => {
     build(input, output, (err) => {
       clearProcess(name);
-      if(!err) load(); else{
+      if(!err && !isInternal) reload(path.join(secondFolder, name.replace(".jsx",".js"))); else if(err){
         writeError(err);
-        printError(err, input);
+        if(isDevMode() && !isInternal)
+          printError(err, input);
       }
     });
   }
@@ -122,22 +126,57 @@ function render(mainFolder, secondFolder, event, name){
         scriptHandler(input, output.replace(".jsx",".js"));
       })
     } else if(isScript) scriptHandler(input, output)
-    else copyFile(input, output, (err) => {
-      clearProcess(name);
-      if(!err) load(); else writeError(err);
+    else{
+      stat(output, (err, stat) => {
+        if(!err){
+          if(stat.isDirectory()){
+            mkdir(output, {recursive: true}, (_err) => {
+              clearProcess(name);
+            })
+          }else{
+            copyFile(input, output, (err) => {
+              clearProcess(name);
+              if(!err) reload(path.join(secondFolder, name)); else writeError(err);
+            })
+          }
+        }
+      })
+    }
+  }
+
+  
+  if(event === "remove"){
+    var removeOutput = output;
+    if(isReact) removeOutput = removeOutput.replace(".jsx",".js");
+    stat(removeOutput, (err, stat) => {
+      if(!err){
+        if(stat.isDirectory()){
+          rmdir(removeOutput, (err) => {
+            if(err) writeError(err);
+            clearProcess(name);
+          })
+        }
+        else{
+          unlink(removeOutput, (err) => {
+            if(err) writeError(err);
+            clearProcess(name);
+          })
+        }
+      }else writeError(err);
     })
   }
 
-  if(event === "add_or_rename"){
+  if(event === "add_or_rename" && !isCalled){
     stat(output, (err) => {
-      if(err) sync(path.join(input, ".."), path.join(output, ".."), {watch: false}, (event, name) => {
+      if(err) // rename
+      sync(path.join(input, ".."), path.join(output, ".."), {watch: false}, (event, name) => {
+        clearProcess(name);
         render(path.join(input, ".."), path.join(output, ".."), event, name);
-      })
-      else render(input, output, "add", name);
+      });
+      else{ // add
+        clearProcess(name);
+        render(input, output, "add", name);
+      }
     })
-
-    if(event === "remove"){
-      rm(output, (err) => writeError(err));
-    }
   }
 }
