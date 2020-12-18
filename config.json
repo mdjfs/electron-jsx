@@ -1,5 +1,9 @@
 {
     "libraries":{
-        "cssHandler":"css"
+        "cssHandler":"Css",
+        "cssHandlerPath":"electron-jsx/builds/css"
+    },
+    "constants":{
+        "HTML_DOM_IDENTIFIER": "electron-jsx-dynamic"
     }
 }

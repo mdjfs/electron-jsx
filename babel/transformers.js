@@ -1,16 +1,17 @@
 const babel = require("@babel/core");
 const path = require("path");
 
-/** Manage all imports to consider react-build folder
+/** insert a base path in all local imports
+ * @param {String} basepath ALERT: only posix format, not "C:\\..."
  * @returns {{visitor:{}}}
  */
-function manageImport(){
+function manageImport(basePath){
     return {
         visitor:{
             ImportDeclaration(_path){
                 const value = _path.node.source.value;
                 const isRelativePath = !path.isAbsolute(value) && value[0] === ".";
-                if(isRelativePath) _path.node.source.value = "./" + path.posix.join("react-builds", value);
+                if(isRelativePath) _path.node.source.value = "./" + path.posix.join(basePath, value);
             }
         }
     }
