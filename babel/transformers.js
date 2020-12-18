@@ -1,6 +1,5 @@
 const babel = require("@babel/core");
 const path = require("path");
-const {capitalize} = require("../utils");
 
 /** Manage all imports to consider react-build folder
  * @returns {{visitor:{}}}
