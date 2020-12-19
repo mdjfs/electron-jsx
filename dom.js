@@ -14,4 +14,4 @@ function injectScript(head, code){
     head.append(script);
 }
 
-module.exports = {injectScriptIntoIframe, injectScript};
+module.exports = {injectScript};

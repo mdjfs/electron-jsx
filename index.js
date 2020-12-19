@@ -19,10 +19,9 @@ const {
 const path = require("path");
 
 const {build, buildString} = require("./babel/core");
-const { injectScript, makeReference, getIframe, injectScriptIntoIframe } = require("./dom");
+const { injectScript } = require("./dom");
 const printError = require("./exceptions");
 const { writeError, isDevMode, write, sync, requireUncached} = require("./utils");
-const config = require("./config.json");
 
 var ELECTRON_DIRNAME; // <-- path
 
