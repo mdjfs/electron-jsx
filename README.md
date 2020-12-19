@@ -3,7 +3,7 @@
 Real time Transpiler for Electron Apps file-based
 
 # Code in React, use Node modules
-![Quick Test](https://imgur.com/fakZsin.gif)
+![Quick Test](https://imgur.com/fakZsin.gif)<br/>
 That's not looks pretty?
 
 # New Features!
@@ -16,7 +16,7 @@ That's not looks pretty?
 
 # ✋ Before continuing, read this:
 
-This is a BETA version, recently is more stable, but you may can found bugs, if you found any bug and/or you want to say how to fix something, you can go to https://github.com/mdjfs/electron-jsx/issues to contribute me and community ! (:
+This is a BETA version, recently is more stable, but you may can found bugs, if you found any bug and/or you want to say how to fix something, you can go to https://github.com/mdjfs/electron-jsx/issues to contribute me and community! (:
 
 
 ## How electron-jsx works
