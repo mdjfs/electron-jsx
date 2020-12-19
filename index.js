@@ -18,10 +18,10 @@ const {
 } = require("fs");
 const path = require("path");
 
-const {build, buildString} = require("./babel/core");
+const {build, buildString } = require("./babel/core");
 const { injectScript } = require("./dom");
 const printError = require("./exceptions");
-const { writeError, isDevMode, write, sync, requireUncached} = require("./utils");
+const { writeError, isDevMode, write, sync, clearAllCache} = require("./utils");
 
 var ELECTRON_DIRNAME; // <-- path
 
@@ -74,8 +74,8 @@ function load(scriptDom=null){
   }
 }
 
-function reload(module){
-  requireUncached(module);
+function reload(){
+  clearAllCache(path.join(ELECTRON_DIRNAME, "./react-builds"));
   load();
 }
 
@@ -146,7 +146,7 @@ function render(mainFolder, secondFolder, event, name, isInternal=false){
     stat(removeOutput, (err, stat) => {
       if(!err){
         if(stat.isDirectory()){
-          rmdir(removeOutput, (err) => {
+          rmdir(removeOutput,{ recursive: true}, (err) => {
             if(err) writeError(err);
             clearProcess(name);
           })

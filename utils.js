@@ -93,12 +93,26 @@ function isDevMode() {
 }
 
 /** deletes cache for specific module */
-function requireUncached(fullPath) {
-    try{
-        delete require.cache[require.resolve(fullPath)];
-    }catch(e){
-        writeError(e)
-    }
+function clearAllCache(globalPath=".") {
+    readdir(globalPath, {encoding: "utf-8"}, (err, files) => {
+        if(!err){
+            for(const file of files){
+                stat(path.join(globalPath, file), (err, stats) => {
+                    if(!err){
+                        if(stats.isDirectory()){
+                            clearAllCache(path.join(globalPath, file));
+                        }else{
+                            try{
+                                delete require.cache[require.resolve(path.join(globalPath, file))];
+                            }catch{
+
+                            }
+                        }
+                    }   
+                })
+            }
+        }
+    })
 }
 
-module.exports = {sync, write, writeError, isDevMode, requireUncached};
+module.exports = {sync, write, writeError, isDevMode, clearAllCache};
