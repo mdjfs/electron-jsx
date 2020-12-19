@@ -68,11 +68,7 @@ function load(scriptDom=null){
           }catch(e){
             printError(e.toString());
           }`;
-          if(isDevMode()){
-            injectScriptIntoIframe(code);
-          }else{
-            injectScript(document.head, code);
-          }
+          injectScript(document.head, code);
         }).catch(e => (isDevMode()) ? printError(e, src) : console.error(e));
       }else writeError(err);
     })

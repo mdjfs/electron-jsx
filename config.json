@@ -5,9 +5,5 @@
     },
     "constants":{
         "HTML_DOM_IDENTIFIER": "electron-jsx-dynamic"
-    },
-    "dom":{
-        "referenceName":"index.html",
-        "referencePath":"./cache"
     }
 }
